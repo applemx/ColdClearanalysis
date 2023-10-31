@@ -147,9 +147,6 @@ impl Evaluator for Standard {
         info
     }
 
-
-    /// Given a list of move candidates and the number of incoming garbage lines,
-    /// returns the best move candidate to make.
     /// ムーブ候補のリストと、送られてくるごみの数を受け取り、最適なムーブ候補を返します。
     fn pick_move(
         &self,
@@ -158,11 +155,8 @@ impl Evaluator for Standard {
     ) -> MoveCandidate<Value> {
         let mut backup = None;
 
-        // Iterate over each move candidate and evaluate it
         // 各ムーブ候補を反復処理して評価します。
         for mv in candidates.into_iter() {
-            // If there is no incoming garbage or the candidate move is valid with the incoming garbage,
-            // return the candidate move
             // 送られてくるごみがない場合、または候補のムーブが送られてくるごみと共に有効な場合、候補のムーブを返します。
             if incoming == 0
                 || mv.board.column_heights()[3..6]
@@ -171,8 +165,6 @@ impl Evaluator for Standard {
             {
                 return mv;
             }
-
-            // If the candidate move is not valid with the incoming garbage, store it as a backup move
             // 候補のムーブが送られてくるごみと共に有効でない場合、バックアップムーブとして保存します。
             match backup {
                 None => backup = Some(mv),
@@ -180,12 +172,23 @@ impl Evaluator for Standard {
                 _ => {}
             }
         }
-
-        // If no candidate move is valid with the incoming garbage, return the backup move
         // 候補のムーブが送られてくるごみと共に有効でない場合、バックアップムーブを返します。
         return backup.unwrap();
     }
 
+    /// 与えられた盤面とロック情報から、評価値と報酬を計算する。
+    /// 
+    /// # Arguments
+    /// 
+    /// * `lock` - ロック情報
+    /// * `board` - 盤面
+    /// * `move_time` - ピースを置くまでの時間
+    /// * `placed` - 置かれたピース
+    /// 
+    /// # Returns
+    /// 
+    /// * `Value` - 評価値
+    /// * `Reward` - 報酬
     fn evaluate(
         &self,
         lock: &LockResult,
@@ -193,20 +196,27 @@ impl Evaluator for Standard {
         move_time: u32,
         placed: Piece,
     ) -> (Value, Reward) {
+        // 一時的な評価値と累積評価値を初期化する
         let mut transient_eval = 0;
         let mut acc_eval = 0;
 
+        // パーフェクトクリアの場合、累積評価値にパーフェクトクリアの評価値を加算する
         if lock.perfect_clear {
             acc_eval += self.perfect_clear;
         }
+
+        // スタックPCダメージがあるか、パーフェクトクリアでない場合
         if self.stack_pc_damage || !lock.perfect_clear {
+            // B2Bがある場合、累積評価値にB2Bクリアの評価値を加算する
             if lock.b2b {
                 acc_eval += self.b2b_clear;
             }
+            // コンボがある場合、累積評価値にコンボゴミの評価値を加算する
             if let Some(combo) = lock.combo {
                 let combo = combo.min(11) as usize;
                 acc_eval += self.combo_garbage * libtetris::COMBO_GARBAGE[combo] as i32;
             }
+            // ピースの配置種類に応じて、累積評価値に評価値を加算する
             match lock.placement_kind {
                 PlacementKind::Clear1 => {
                     acc_eval += self.clear1;
@@ -239,14 +249,16 @@ impl Evaluator for Standard {
             }
         }
 
+        // 置かれたピースがTピースの場合
         if placed == Piece::T {
+            // ピースの配置種類に応じて、累積評価値に評価値を加算する
             match lock.placement_kind {
                 PlacementKind::Tspin1 | PlacementKind::Tspin2 | PlacementKind::Tspin3 => {}
                 _ => acc_eval += self.wasted_t,
             }
         }
 
-        // magic approximation of line clear delay
+        // ラインクリアの遅延を近似する
         let move_time = if lock.placement_kind.is_clear() {
             move_time as i32 + 40
         } else {
@@ -254,19 +266,25 @@ impl Evaluator for Standard {
         };
         acc_eval += self.move_time * move_time;
 
+        // B2Bボーナスがある場合、一時的な評価値にB2Bの評価値を加算する
         if board.b2b_bonus {
             transient_eval += self.back_to_back;
         }
 
+        // 最も高い列の高さを取得する
         let highest_point = *board.column_heights().iter().max().unwrap() as i32;
+        // 最も高い列が15より大きい場合、一時的な評価値にトップクォーターの評価値を加算する
         transient_eval += self.top_quarter * (highest_point - 15).max(0);
+        // 最も高い列が10より大きい場合、一時的な評価値にトップハーフの評価値を加算する
         transient_eval += self.top_half * (highest_point - 10).max(0);
 
+        // Jeopardyの評価値を計算する
         acc_eval += self.jeopardy
             * (highest_point - 10).max(0)
             * if self.timed_jeopardy { move_time } else { 10 }
             / 10;
 
+        // Tスロットの評価値を計算する
         let ts = if self.use_bag {
             board.next_bag().contains(Piece::T) as usize
                 + (board.next_bag().len() <= 3) as usize
@@ -307,9 +325,12 @@ impl Evaluator for Standard {
             }
         }
 
+        // 最も高い列の高さを取得する
         let highest_point = *board.column_heights().iter().max().unwrap() as i32;
+        // 一時的な評価値に高さの評価値を加算する
         transient_eval += self.height * highest_point;
 
+        // ウェルの評価値を計算する
         let mut well = 0;
         for x in 1..10 {
             if board.column_heights()[x] <= board.column_heights()[well] {
@@ -327,11 +348,14 @@ impl Evaluator for Standard {
             depth += 1;
         }
         let depth = depth.min(self.max_well_depth);
+        // 一時的な評価値にウェルの深さの評価値を加算する
         transient_eval += self.well_depth * depth;
         if depth != 0 {
+            // 一時的な評価値にウェルの列の評価値を加算する
             transient_eval += self.well_column[well];
         }
 
+        // 行のトランジションの評価値を計算する
         if self.row_transitions != 0 {
             transient_eval += self.row_transitions
                 * (0..40)
@@ -340,7 +364,7 @@ impl Evaluator for Standard {
                     .map(|d| d.count_ones() as i32)
                     .sum::<i32>();
         }
-
+        // 評価値と報酬を返す
         if self.bumpiness | self.bumpiness_sq != 0 {
             let (bump, bump_sq) = bumpiness(&board, well);
             transient_eval += bump * self.bumpiness;
