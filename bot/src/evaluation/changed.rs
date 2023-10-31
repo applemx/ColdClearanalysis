@@ -200,7 +200,7 @@ impl Evaluator for Standard {
         let mut transient_eval = 0;
         let mut acc_eval = 0;
 
-        // パーフェクトクリアの場合、累積評価値にパーフェクトクリアの評価値を加算する
+        // パーフェクトクリアの場合、累積評価値にパーフェクトクリアの評価値を加算するa
         if lock.perfect_clear {
             acc_eval += self.perfect_clear;
         }
