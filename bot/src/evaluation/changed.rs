@@ -714,7 +714,7 @@ fn cutout_tslot(mut board: Board, mut piece: FallingPiece) -> Cutout {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]//下の構造体に継承している
 pub struct Reward {
     value: i32,
     attack: i32,
